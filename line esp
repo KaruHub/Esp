@@ -1,0 +1,302 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- Configuration settings
+local settings = {
+    ESP = {
+        Enabled = true,
+        BoxesEnabled = true,
+        NamesEnabled = true,
+        DistanceEnabled = true,
+        TracersEnabled = true,
+        TeamCheck = false,
+        BoxColor = Color3.fromRGB(255, 0, 0),
+        TracerColor = Color3.fromRGB(255, 255, 0),
+        TextColor = Color3.fromRGB(255, 255, 255),
+        TextSize = 14,
+        TracerThickness = 1,
+        TextFont = Enum.Font.SourceSans,
+        TracerOrigin = "Bottom" -- "Bottom", "Center", "Mouse"
+    }
+}
+
+-- Container for all ESP components
+local ESPContainer = Instance.new("Folder")
+ESPContainer.Name = "ESPContainer"
+ESPContainer.Parent = game.CoreGui
+
+-- Store created ESP objects
+local playerESP = {}
+
+-- Create ESP for a player
+local function createESP(player)
+    if player == LocalPlayer then return end
+    
+    local espFolder = Instance.new("Folder")
+    espFolder.Name = player.Name
+    espFolder.Parent = ESPContainer
+    
+    -- Box
+    local box = Instance.new("BoxHandleAdornment")
+    box.Name = "Box"
+    box.Adornee = nil
+    box.AlwaysOnTop = true
+    box.ZIndex = 10
+    box.Size = Vector3.new(4, 6, 4)
+    box.Transparency = 0.5
+    box.Color3 = settings.ESP.BoxColor
+    box.Parent = espFolder
+    box.Visible = false
+    
+    -- Name Label
+    local nameLabel = Instance.new("BillboardGui")
+    nameLabel.Name = "NameLabel"
+    nameLabel.Size = UDim2.new(0, 200, 0, 50)
+    nameLabel.Adornee = nil
+    nameLabel.AlwaysOnTop = true
+    nameLabel.StudsOffset = Vector3.new(0, 3, 0)
+    nameLabel.Parent = espFolder
+    nameLabel.Visible = false
+    
+    local nameText = Instance.new("TextLabel")
+    nameText.Name = "NameText"
+    nameText.BackgroundTransparency = 1
+    nameText.Size = UDim2.new(1, 0, 1, 0)
+    nameText.Text = player.Name
+    nameText.Font = settings.ESP.TextFont
+    nameText.TextSize = settings.ESP.TextSize
+    nameText.TextColor3 = settings.ESP.TextColor
+    nameText.TextStrokeTransparency = 0
+    nameText.TextStrokeColor3 = Color3.new(0, 0, 0)
+    nameText.Parent = nameLabel
+    
+    -- Distance Label
+    local distanceLabel = Instance.new("BillboardGui")
+    distanceLabel.Name = "DistanceLabel"
+    distanceLabel.Size = UDim2.new(0, 200, 0, 50)
+    distanceLabel.Adornee = nil
+    distanceLabel.AlwaysOnTop = true
+    distanceLabel.StudsOffset = Vector3.new(0, -1, 0)
+    distanceLabel.Parent = espFolder
+    distanceLabel.Visible = false
+    
+    local distanceText = Instance.new("TextLabel")
+    distanceText.Name = "DistanceText"
+    distanceText.BackgroundTransparency = 1
+    distanceText.Size = UDim2.new(1, 0, 1, 0)
+    distanceText.Text = "0m"
+    distanceText.Font = settings.ESP.TextFont
+    distanceText.TextSize = settings.ESP.TextSize
+    distanceText.TextColor3 = settings.ESP.TextColor
+    distanceText.TextStrokeTransparency = 0
+    distanceText.TextStrokeColor3 = Color3.new(0, 0, 0)
+    distanceText.Parent = distanceLabel
+    
+    -- Tracer
+    local tracer = Instance.new("Beam")
+    tracer.Name = "Tracer"
+    tracer.FaceCamera = true
+    tracer.Transparency = NumberSequence.new(0)
+    tracer.Width0 = settings.ESP.TracerThickness
+    tracer.Width1 = settings.ESP.TracerThickness
+    tracer.Color = ColorSequence.new(settings.ESP.TracerColor)
+    
+    local attachment0 = Instance.new("Attachment")
+    attachment0.Name = "TracerStart"
+    attachment0.Parent = workspace.Terrain
+    
+    local attachment1 = Instance.new("Attachment")
+    attachment1.Name = "TracerEnd"
+    attachment1.Parent = workspace.Terrain
+    
+    tracer.Attachment0 = attachment0
+    tracer.Attachment1 = attachment1
+    tracer.Parent = espFolder
+    tracer.Visible = false
+    
+    return {
+        box = box,
+        nameLabel = nameLabel,
+        nameText = nameText,
+        distanceLabel = distanceLabel,
+        distanceText = distanceText,
+        tracer = tracer,
+        tracerStart = attachment0,
+        tracerEnd = attachment1
+    }
+end
+
+-- Team check function
+local function isTeamMate(player)
+    if settings.ESP.TeamCheck then
+        return player.Team == LocalPlayer.Team
+    end
+    return false
+end
+
+-- Get tracer origin position based on setting
+local function getTracerOrigin()
+    local origin = Vector3.new(Camera.CFrame.Position.X, Camera.CFrame.Position.Y - 5, Camera.CFrame.Position.Z)
+    
+    if settings.ESP.TracerOrigin == "Center" then
+        origin = Camera.CFrame.Position
+    elseif settings.ESP.TracerOrigin == "Mouse" then
+        local mousePos = LocalPlayer:GetMouse().Hit.Position
+        origin = Vector3.new(mousePos.X, mousePos.Y, mousePos.Z)
+    end
+    
+    return origin
+end
+
+-- Update ESP for a player
+local function updateESP(player, espObjects)
+    if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or 
+       not player.Character:FindFirstChild("Humanoid") or player.Character.Humanoid.Health <= 0 then
+        -- Hide ESP if player isn't valid
+        if espObjects then
+            espObjects.box.Visible = false
+            espObjects.nameLabel.Visible = false
+            espObjects.distanceLabel.Visible = false
+            espObjects.tracer.Visible = false
+        end
+        return
+    end
+    
+    local character = player.Character
+    local hrp = character.HumanoidRootPart
+    local humanoid = character.Humanoid
+    
+    -- Check if player is teammate
+    if isTeamMate(player) and settings.ESP.TeamCheck then
+        espObjects.box.Visible = false
+        espObjects.nameLabel.Visible = false
+        espObjects.distanceLabel.Visible = false
+        espObjects.tracer.Visible = false
+        return
+    end
+    
+    -- Calculate distance
+    local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) and 
+                    (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude or 0
+    distance = math.floor(distance)
+    
+    -- Update box
+    if settings.ESP.BoxesEnabled and settings.ESP.Enabled then
+        espObjects.box.Visible = true
+        espObjects.box.Adornee = character
+        espObjects.box.Size = Vector3.new(4, humanoid.RigType == Enum.HumanoidRigType.R6 and 6 or 7, 4)
+        espObjects.box.Color3 = settings.ESP.BoxColor
+    else
+        espObjects.box.Visible = false
+    end
+    
+    -- Update name label
+    if settings.ESP.NamesEnabled and settings.ESP.Enabled then
+        espObjects.nameLabel.Visible = true
+        espObjects.nameLabel.Adornee = hrp
+        espObjects.nameText.Text = player.Name
+    else
+        espObjects.nameLabel.Visible = false
+    end
+    
+    -- Update distance label
+    if settings.ESP.DistanceEnabled and settings.ESP.Enabled then
+        espObjects.distanceLabel.Visible = true
+        espObjects.distanceLabel.Adornee = hrp
+        espObjects.distanceText.Text = distance .. "m"
+    else
+        espObjects.distanceLabel.Visible = false
+    end
+    
+    -- Update tracer
+    if settings.ESP.TracersEnabled and settings.ESP.Enabled then
+        local origin = getTracerOrigin()
+        espObjects.tracerStart.Position = origin
+        espObjects.tracerEnd.Position = hrp.Position
+        espObjects.tracer.Visible = true
+    else
+        espObjects.tracer.Visible = false
+    end
+end
+
+-- Update all ESPs
+local function updateAllESP()
+    for player, espObjects in pairs(playerESP) do
+        if player then
+            updateESP(player, espObjects)
+        end
+    end
+end
+
+-- Handle players
+local function onPlayerAdded(player)
+    playerESP[player] = createESP(player)
+end
+
+local function onPlayerRemoving(player)
+    if playerESP[player] then
+        -- Clean up ESP objects
+        local espFolder = ESPContainer:FindFirstChild(player.Name)
+        if espFolder then
+            espFolder:Destroy()
+        end
+        playerESP[player] = nil
+    end
+end
+
+-- Toggle ESP on/off with F4 key
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.F4 then
+        settings.ESP.Enabled = not settings.ESP.Enabled
+        -- Create notification
+        local notification = Instance.new("ScreenGui")
+        notification.Name = "ESPNotification"
+        notification.Parent = game.CoreGui
+        
+        local text = Instance.new("TextLabel")
+        text.Size = UDim2.new(0, 200, 0, 50)
+        text.Position = UDim2.new(0.5, -100, 0, 100)
+        text.BackgroundTransparency = 0.5
+        text.BackgroundColor3 = Color3.new(0, 0, 0)
+        text.TextColor3 = Color3.new(0, 1, 0)
+        text.Text = settings.ESP.Enabled and "ESP Enabled" or "ESP Disabled"
+        text.Font = settings.ESP.TextFont
+        text.TextSize = 24
+        text.Parent = notification
+        
+        game:GetService("Debris"):AddItem(notification, 2)
+    end
+end)
+
+-- Initialize
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        onPlayerAdded(player)
+    end
+end
+
+-- Connect events
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+RunService.RenderStepped:Connect(updateAllESP)
+
+-- Notification on load
+local loadNotification = Instance.new("ScreenGui")
+loadNotification.Name = "LoadNotification"
+loadNotification.Parent = game.CoreGui
+
+local loadText = Instance.new("TextLabel")
+loadText.Size = UDim2.new(0, 300, 0, 50)
+loadText.Position = UDim2.new(0.5, -150, 0, 100)
+loadText.BackgroundTransparency = 0.5
+loadText.BackgroundColor3 = Color3.new(0, 0, 0)
+loadText.TextColor3 = Color3.new(0, 1, 0)
+loadText.Text = "ESP/Tracers Loaded! Press F4 to toggle"
+loadText.Font = settings.ESP.TextFont
+loadText.TextSize = 24
+loadText.Parent = loadNotification
+
+game:GetService("Debris"):AddItem(loadNotification, 3)
